@@ -1,6 +1,7 @@
 
 import os
 import requests
+from html import unescape
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -11,99 +12,102 @@ SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
 COMMENTS_URL = "https://www.googleapis.com/youtube/v3/commentThreads"
 
 
-def fetch_youtube_comments(brand, max_videos=5, comments_per_video=20):
-
+def fetch_youtube_data(
+    brand,
+    max_videos=5,
+    comments_per_video=20
+):
     if not API_KEY:
-        raise ValueError("YOUTUBE_API_KEY is missing from .env")
+        raise ValueError("YOUTUBE_API_KEY is missing")
 
-    # Step 1: Search for brand-related videos
-    search_params = {
-        "key": API_KEY,
-        "part": "snippet",
-        "q": brand,
-        "type": "video",
-        "maxResults": max_videos
-    }
+    if not 1 <= max_videos <= 50:
+        raise ValueError("max_videos must be between 1 and 50")
 
+    if not 1 <= comments_per_video <= 100:
+        raise ValueError("comments_per_video must be between 1 and 100")
+
+    # 1. Search videos
     response = requests.get(
         SEARCH_URL,
-        params=search_params,
+        params={
+            "key": API_KEY,
+            "part": "snippet",
+            "q": brand,
+            "type": "video",
+            "maxResults": max_videos
+        },
         timeout=30
     )
     response.raise_for_status()
 
-    videos = response.json().get("items", [])
+    search_results = response.json().get("items", [])
 
-    records = []
+    videos = []
+    comments = []
 
-    # Step 2: Fetch comments from each video
-    for video in videos:
-        video_id = video["id"]["videoId"]
-        video_title = video["snippet"]["title"]
+    for item in search_results:
+        video_id = item["id"]["videoId"]
+        snippet = item["snippet"]
 
-        comment_params = {
-            "key": API_KEY,
-            "part": "snippet",
-            "videoId": video_id,
-            "maxResults": comments_per_video,
-            "textFormat": "plainText"
-        }
+        # 2. Collect video metadata
+        videos.append({
+            "video_id": video_id,
+            "title": unescape(snippet["title"]),
+            "description": snippet.get("description"),
+            "channel_title": snippet.get("channelTitle"),
+            "published_at": snippet.get("publishedAt"),
+            "url": f"https://www.youtube.com/watch?v={video_id}"
+        })
 
-        comment_response = requests.get(
+        # 3. Fetch video comments
+        response = requests.get(
             COMMENTS_URL,
-            params=comment_params,
+            params={
+                "key": API_KEY,
+                "part": "snippet",
+                "videoId": video_id,
+                "maxResults": comments_per_video,
+                "textFormat": "plainText"
+            },
             timeout=30
         )
 
-        # Skip only videos where comments are disabled
-        if comment_response.status_code == 403:
-            errors = comment_response.json().get(
+        if response.status_code == 403:
+            errors = response.json().get(
                 "error", {}
             ).get("errors", [])
 
             if any(
-                error.get("reason") == "commentsDisabled"
-                for error in errors
+                e.get("reason") == "commentsDisabled"
+                for e in errors
             ):
                 continue
 
-        comment_response.raise_for_status()
+        response.raise_for_status()
 
-        comments = comment_response.json().get("items", [])
+        for thread in response.json().get("items", []):
+            top_comment = thread["snippet"]["topLevelComment"]
+            comment = top_comment["snippet"]
+            comment_id = top_comment["id"]
 
-        for item in comments:
-            top_comment = item["snippet"]["topLevelComment"]
-            snippet = top_comment["snippet"]
-
-            records.append({
-                "brand": brand,
-                "source": "youtube",
-                "source_id": top_comment["id"],
-                "content_type": "comment",
+            comments.append({
+                "comment_id": comment_id,
                 "video_id": video_id,
-                "video_title": video_title,
-                "text": snippet["textDisplay"],
-                "published_at": snippet["publishedAt"],
+                "text": comment.get("textDisplay", ""),
+                "published_at": comment.get("publishedAt"),
+                "updated_at": comment.get("updatedAt"),
+                "like_count": comment.get("likeCount", 0),
                 "url": (
                     f"https://www.youtube.com/watch?v={video_id}"
-                    f"&lc={top_comment['id']}"
+                    f"&lc={comment_id}"
                 )
             })
 
-    return records
-
+    return videos, comments
 
 if __name__ == "__main__":
-    brand = "Microsoft"
-
-    data = fetch_youtube_comments(
-        brand=brand,
-        max_videos=5,
-        comments_per_video=20
-    )
-
-
-    print(f"Fetched {len(data)} YouTube comments")
-
-    for record in data[:3]:
-        print(record)
+    # videos, comments = fetch_youtube_data(
+    #     brand="Microsoft",
+    #     max_videos=5,
+    #     comments_per_video=20)
+    pass

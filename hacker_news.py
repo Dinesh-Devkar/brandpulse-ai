@@ -59,15 +59,16 @@ def fetch_hacker_news_mentions(brand, max_results=20):
 
 
 if __name__ == "__main__":
-    brand = "Microsoft"
+    pass
+    # brand = "Microsoft"
 
-    data = fetch_hacker_news_mentions(
-        brand=brand,
-        max_results=20
-    )
+    # data = fetch_hacker_news_mentions(
+    #     brand=brand,
+    #     max_results=20
+    # )
 
-    print(f"Fetched {len(data)} Hacker News records")
+    # print(f"Fetched {len(data)} Hacker News records")
 
-    for record in data[:3]:
-        print(record)
-        print("\n" + "===========================" + "\n")
+    # for record in data[:3]:
+    #     print(record)
+    #     print("\n" + "===========================" + "\n")
