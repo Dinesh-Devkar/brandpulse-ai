@@ -1,6 +1,6 @@
 
-from database.init_db import init_db
 from database.repository import save_brand_data
+from database.init_db import init_db
 
 from youtube import fetch_youtube_data
 from hacker_news import fetch_hacker_news_mentions
