@@ -33,3 +33,4 @@ langchain-community
 pyodbc
 bs4
 requests
+pydantic

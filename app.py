@@ -1,6 +1,7 @@
 """BrandPulse Aurora — ingestion and AI processing workflow.
 
-Five UI states: home, fetching, collected, analyzing, analyzed; plus an error state.
+Screens: home, fetching, collected, analyzing, analyzed, dashboard; plus error state.
+The dashboard offers overview and four read-only intelligence drilldowns.
 Backend progress is streamed synchronously through Python callbacks.
 """
 
@@ -73,6 +74,13 @@ def initialize_state() -> None:
         "bp_ai_result": None,
         "bp_error_origin": "ingestion",
         "bp_ai_max_records": 100,
+        "bp_dashboard_view": "overview",
+        "bp_dashboard_data": None,
+        "bp_dashboard_data_brand": None,
+        "bp_trend_granularity": "month",
+        "bp_sentiment_focus": "Distribution",
+        "bp_trend_display": "Sentiment share (%)",
+        "bp_voice_kind": "Positive",
     }
     for key, default in defaults.items():
         if key not in st.session_state:
@@ -94,6 +102,9 @@ def reset_home() -> None:
     st.session_state.bp_ai_metrics = {}
     st.session_state.bp_ai_result = None
     st.session_state.bp_error_origin = "ingestion"
+    st.session_state.bp_dashboard_data = None
+    st.session_state.bp_dashboard_data_brand = None
+    st.session_state.bp_dashboard_view = "overview"
 
 
 def start_collection(brand: str) -> None:
@@ -111,6 +122,13 @@ def start_collection(brand: str) -> None:
     st.session_state.bp_ai_metrics = {}
     st.session_state.bp_ai_result = None
     st.session_state.bp_error_origin = "ingestion"
+    st.session_state.bp_dashboard_data = None
+    st.session_state.bp_dashboard_data_brand = None
+    st.session_state.bp_dashboard_view = "overview"
+    # Clear filters from the previously selected brand.
+    for key in list(st.session_state.keys()):
+        if key == "bp_selected_topic" or key.startswith("bp_voice_source_") or key.startswith("bp_voice_topic_"):
+            del st.session_state[key]
 
 
 def start_ai_analysis() -> None:
@@ -123,6 +141,14 @@ def start_ai_analysis() -> None:
     st.session_state.bp_ai_result = None
     st.session_state.bp_error = ""
     st.session_state.bp_error_origin = "analysis"
+    st.session_state.bp_dashboard_data = None  # Fresh KPIs after any new batch.
+
+
+def open_dashboard(view: str = "overview") -> None:
+    """Only navigates to read-only dashboard; never invokes Ollama."""
+    st.session_state.bp_phase = "dashboard"
+    st.session_state.bp_dashboard_view = view
+    st.rerun()
 
 
 def logo_html() -> str:
@@ -144,38 +170,49 @@ def logo_html() -> str:
 
 
 def sidebar() -> None:
+    """Clickable navigation, including all intelligence drilldown pages."""
     with st.sidebar:
         st.markdown(logo_html(), unsafe_allow_html=True)
         phase = st.session_state.bp_phase
-        home_class = "bp-nav-active" if phase == "home" else ""
-        collection_class = "bp-nav-active" if phase in ("fetching", "collected") else ""
-        analysis_class = "bp-nav-active" if phase in ("analyzing", "analyzed") else ""
-        items = [
-            ("⌂", "Home", home_class, ""),
-            ("◉", "Collection", collection_class, ""),
-            ("✦", "AI Processing", analysis_class, ""),
-            ("▥", "Overview", "bp-nav-soon", "Soon"),
-            ("◔", "Sentiment", "bp-nav-soon", "Soon"),
-            ("⬡", "Topics", "bp-nav-soon", "Soon"),
-            ("☰", "Customer Voice", "bp-nav-soon", "Soon"),
-            ("✦", "Executive Insights", "bp-nav-soon", "Soon"),
-        ]
-        entries = "".join(
-            f'<div class="bp-nav-row {cls}"><span class="bp-nav-ico">{ico}</span>'
-            f'<span>{h(name)}</span><small>{h(tag)}</small></div>'
-            for ico, name, cls, tag in items
+        if st.button("⌂   Home", use_container_width=True, key="nav_home_real",
+                     disabled=phase in ("fetching", "analyzing"),
+                     type="primary" if phase == "home" else "secondary"):
+            reset_home()
+            st.rerun()
+
+        can_collection = st.session_state.bp_summary is not None
+        if st.button("▤   Collection Result", use_container_width=True,
+                     key="nav_collection_real", disabled=not can_collection or phase in ("fetching", "analyzing"),
+                     type="primary" if phase == "collected" else "secondary"):
+            st.session_state.bp_phase = "collected"
+            st.rerun()
+
+        can_ai = st.session_state.bp_ai_result is not None
+        if st.button("✧   AI Processing Result", use_container_width=True,
+                     key="nav_ai_real", disabled=not can_ai or phase in ("fetching", "analyzing"),
+                     type="primary" if phase == "analyzed" else "secondary"):
+            st.session_state.bp_phase = "analyzed"
+            st.rerun()
+
+        st.markdown('<div class="bp-nav-section">INTELLIGENCE WORKSPACE</div>', unsafe_allow_html=True)
+        view_items = (
+            ("overview", "▥   Overview"),
+            ("sentiment", "◔   Sentiment"),
+            ("topics", "⬡   Topics"),
+            ("voice", "☰   Customer Voice"),
+            ("executive", "✦   Executive Insights"),
         )
-        st.markdown(f'<nav class="bp-nav">{entries}</nav>', unsafe_allow_html=True)
+        selected = st.session_state.get("bp_dashboard_view", "overview")
+        for view, name in view_items:
+            if st.button(name, use_container_width=True, key=f"nav_{view}_real",
+                         disabled=not can_ai or phase in ("fetching", "analyzing"),
+                         type="primary" if phase == "dashboard" and selected == view else "secondary"):
+                open_dashboard(view)
         st.markdown(
-            '<div class="bp-sidebar-footer">'
-            '<span class="bp-footer-dot"></span> BrandPulse Aurora'
-            '<div>Collection + AI processing</div></div>',
+            '<div class="bp-sidebar-footer"><span class="bp-footer-dot"></span>'
+            ' BrandPulse Aurora<div>Evidence-backed brand intelligence</div></div>',
             unsafe_allow_html=True,
         )
-        if phase not in ("home", "fetching", "analyzing"):
-            if st.button("← Back to Home", use_container_width=True, key="nav_home"):
-                reset_home()
-                st.rerun()
 
 
 def topbar() -> None:
@@ -187,6 +224,7 @@ def topbar() -> None:
         "collected": "Mentions collected",
         "analyzing": "AI processing in progress",
         "analyzed": "AI processing run complete",
+        "dashboard": "Saved intelligence workspace",
         "error": "Action needed",
     }.get(phase, "Brand intelligence")
     brand_pill = f'<span class="bp-brand-pill">◈ {h(brand)}</span>' if brand else ""
@@ -879,21 +917,30 @@ def ai_complete_page() -> None:
 
     st.markdown('<div class="bp-cta-spacer"></div>', unsafe_allow_html=True)
     primary, secondary = st.columns([2, 1], gap="large")
+    has_saved_analysis = int(overview.get("analyzed_mentions", 0) or 0) > 0
     with primary:
         if remaining is not None and remaining > 0:
             if st.button("✧  Process Next AI Batch   →", type="primary", use_container_width=True, key="next_batch"):
                 start_ai_analysis()
                 st.rerun()
         elif summary_status == "failed":
-            if st.button("↻  Retry Executive Summary", type="primary", use_container_width=True, key="retry_summary"):
+            if st.button("↻ Retry Executive Summary", type="primary", use_container_width=True, key="retry_summary"):
                 start_ai_analysis()
                 st.rerun()
         else:
-            st.button("✦  Show Intelligence Dashboard — Next Phase", type="primary", disabled=True, use_container_width=True)
+            if st.button("✦  Show Intelligence Dashboard  →", type="primary", use_container_width=True, key="show_dashboard"):
+                open_dashboard("overview")
     with secondary:
-        if st.button("← Analyze another brand", use_container_width=True, key="another_brand_analyzed"):
-            reset_home()
-            st.rerun()
+        if remaining is not None and remaining > 0 and has_saved_analysis:
+            if st.button("View partial insights  ↗", use_container_width=True, key="view_partial_dashboard"):
+                open_dashboard("overview")
+        elif summary_status == "failed" and has_saved_analysis:
+            if st.button("View insights  ↗", use_container_width=True, key="view_without_summary"):
+                open_dashboard("overview")
+        else:
+            if st.button("← Analyze another brand", use_container_width=True, key="another_brand_analyzed"):
+                reset_home()
+                st.rerun()
     with st.expander("View AI processing activity", expanded=False):
         st.markdown(ai_activity_html(st.session_state.bp_ai_events, False), unsafe_allow_html=True)
 
@@ -937,6 +984,9 @@ def main() -> None:
         ai_analysis_page(run=st.session_state.bp_ai_run_pending)
     elif phase == "analyzed":
         ai_complete_page()
+    elif phase == "dashboard":
+        from intelligence_dashboard import render_intelligence_workspace
+        render_intelligence_workspace()
     elif phase == "error":
         error_page()
 
