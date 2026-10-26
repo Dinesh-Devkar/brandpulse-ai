@@ -184,25 +184,103 @@ def _topic_bar(topics: list[dict], height: int = 285) -> go.Figure:
         textposition="outside", cliponaxis=False,
     ))
     _style_plot(fig, height)
-    fig.update_layout(showlegend=False, margin=dict(l=6, r=43, t=10, b=15))
-    fig.update_xaxes(showgrid=True, gridcolor="#f0f3fb", rangemode="tozero")
+    # fig.update_layout(showlegend=False, margin=dict(l=6, r=43, t=10, b=15))
+    # fig.update_xaxes(showgrid=True, gridcolor="#f0f3fb", rangemode="tozero")
+
+    fig.update_layout(
+    showlegend=False,
+    margin=dict(l=210, r=43, t=10, b=15))
+    fig.update_yaxes(automargin=True)
     return fig
 
 
-def _topic_sentiments(topics: list[dict], height: int = 390) -> go.Figure:
+# def _topic_sentiments(topics: list[dict], height: int = 390) -> go.Figure:
+#     selected = list(reversed(topics[:12]))
+#     fig = go.Figure()
+#     names = [t.get("topic", "Unknown") for t in selected]
+#     for s in SENTIMENTS:
+#         vals = [float(t.get("sentiment_percentages", {}).get(s, 0) or 0) for t in selected]
+#         fig.add_trace(go.Bar(
+#             x=vals, y=names, orientation="h", name=s.title(), marker_color=PALETTE[s],
+#             hovertemplate=f"%{{y}}<br>{s.title()}: %{{x:.1f}}%<extra></extra>",
+#         ))
+#     _style_plot(fig, height)
+#     fig.update_layout(barmode="stack", bargap=.42)
+#     fig.update_xaxes(range=[0, 100], ticksuffix="%")
+#     return fig
+
+
+
+def _topic_sentiments(
+    topics: list[dict],
+    height: int = 390
+) -> go.Figure:
+
     selected = list(reversed(topics[:12]))
+
     fig = go.Figure()
-    names = [t.get("topic", "Unknown") for t in selected]
+
+    names = [
+        t.get("topic", "Unknown")
+        for t in selected
+    ]
+
     for s in SENTIMENTS:
-        vals = [float(t.get("sentiment_percentages", {}).get(s, 0) or 0) for t in selected]
-        fig.add_trace(go.Bar(
-            x=vals, y=names, orientation="h", name=s.title(), marker_color=PALETTE[s],
-            hovertemplate=f"%{{y}}<br>{s.title()}: %{{x:.1f}}%<extra></extra>",
-        ))
+
+        vals = [
+            float(
+                t.get(
+                    "sentiment_percentages", {}
+                ).get(s, 0) or 0
+            )
+            for t in selected
+        ]
+
+        fig.add_trace(
+            go.Bar(
+                x=vals,
+                y=names,
+                orientation="h",
+                name=s.title(),
+                marker_color=PALETTE[s],
+                hovertemplate=(
+                    f"%{{y}}<br>"
+                    f"{s.title()}: %{{x:.1f}}%"
+                    "<extra></extra>"
+                )
+            )
+        )
+
     _style_plot(fig, height)
-    fig.update_layout(barmode="stack", bargap=.42)
-    fig.update_xaxes(range=[0, 100], ticksuffix="%")
+
+    # Allocate room for the topic names
+    fig.update_layout(
+        barmode="stack",
+        bargap=0.42,
+        margin=dict(
+            l=210,
+            r=30,
+            t=55,
+            b=40
+        )
+    )
+
+    # Ensure Y-axis topic labels are visible
+    fig.update_yaxes(
+        automargin=True,
+        tickfont=dict(
+            size=12,
+            color="#53688d"
+        )
+    )
+
+    fig.update_xaxes(
+        range=[0, 100],
+        ticksuffix="%"
+    )
+
     return fig
+
 
 
 def _card_title(title: str, label: str = "") -> None:
